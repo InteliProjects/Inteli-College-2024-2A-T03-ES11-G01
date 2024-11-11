@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "backend"
+version = "0.1.0"
+description = ""
+authors = ["Felipe Saadi <felipesaadisiegert@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+clickhouse-connect = "^0.7.19"
+python-dotenv = "^1.0.1"
+Flask = "^3.0.3"
+flask_jwt_extended = "^4.0"
+bcrypt = "^4.0"
+
+[build-system]
+requires = ["poetry-backend"]
+build-backend = "poetry.backend.masonry.api"

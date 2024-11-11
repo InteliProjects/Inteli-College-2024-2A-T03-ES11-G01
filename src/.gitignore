@@ -1,0 +1,12 @@
+**/volumes/db
+**/storage
+.env
+test.http
+docker-compose.override.yml
+*.pyc 
+*.csv
+*.parquet
+**/*.csv
+**/*.parquet
+temp
+.aws/

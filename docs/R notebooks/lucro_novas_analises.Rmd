@@ -1,0 +1,243 @@
+---
+title: "Análise da variável lucro por região com os novos dados fornecidos"
+output: html_notebook
+---
+
+As análises a seguir são uma complementação de outras feitas anteriormente, uma vez que o parceiro enviou novos dados. O conjunto que mais sofreu mudanças foi o de transações.
+
+# 1. Setup inicial
+
+## 1.1 Instalações e packages
+
+1. Instalação dos pacotes necessários: tidyverse, GGally, corrplot, gridExtra, ggplot2, dplyr, FactoMineR, lubridate.
+
+```{r}
+# Importação das bibliotecas
+library(tidyverse)
+library(GGally)
+library(corrplot)
+library(gridExtra)
+library(ggplot2)
+library(dplyr)
+library(FactoMineR)
+library(lubridate)
+```
+
+## 1.2 Download dos dados
+
+1. Acessar o drive do grupo: https://drive.google.com/drive/folders/1_HJWL3r9yylrc91wWRy0CxM8ubZB6dlS
+
+2. Fazer download de todos os arquivos .csv
+
+3. Alterar o path abaixo para o relativo dos downloads dos datasets:
+```{r}
+# Coloque o caminho para o diretório onde os arquivos .csv foram importados
+dataPath <- "~/Downloads"
+```
+
+```{r}
+# Carregamento dos dados
+transactions_data <- read.csv(paste(dataPath, "/transaction_fact_v6_2024.csv", sep = ""))
+store_final <- read.csv(paste(dataPath, "/store_final.csv", sep = ""))
+sku_cost <- read.csv(paste(dataPath, "/sku_cost-2.csv", sep = ""))
+```
+
+# 2. Tratamento de dados
+
+Todo o tratamento de dados a seguir é semelhante ao feito em análises anteriores, também disponíveis nesse diretório.
+
+Para esta análise, foi necessário fazer a junção de 3 datasets, sendo eles:
+
+- **transactions_data:** contém dados das transações do ano de 2024;
+- **store_final:** contém informações mais específicas de cada loja do varejo;
+- **sku_cost:** contém os custos de cada produto de acordo com certo data;
+
+A seguir, está o passo a passo de como foi feito esse tratamento:
+
+**Passo 1:** mergiar a tabela de transações com a das lojas para relacionar em qual loja cada transação ocorreu
+```{r}
+merged_data <- transactions_data %>%
+  left_join(store_final, by = c("cod_loja" = "nome_loja"))
+
+head(merged_data)
+```
+
+**Passo 2:** criar uma coluna chamada preço unitário, na qual terá os valores do preço de uma unidade de cada produto, já que a coluna "preço" apresenta um valor relacionado a quantidade comprada.
+```{r}
+merged_data <- merged_data %>%
+  mutate(preco_unitario = preco / quantidade)
+
+head(merged_data)
+```
+
+**Passo 3:** a tabela "sku_cost" apresenta os custos de diversos anos, mas como a de transações trabalha apenas com o ano de 2024, foi necessário filtrar a tabela para mostrar o custo dos produtos apenas no ano de 2024.
+```{r}
+# Transformação dos das datas para o tipo "data"
+sku_cost <- sku_cost %>%
+  mutate(data_inicio = as.Date(data_inicio, format = "%Y-%m-%d"),
+         data_fim = as.Date(data_fim, format = "%Y-%m-%d"))
+
+# Filtrar a última data para o ano de 2024
+sku_cost_2024 <- sku_cost %>%
+  filter(year(data_fim) == 2024)
+
+head(sku_cost_2024)
+```
+
+**Passo 4:** o custo dos produtos varia muito em um mesmo ano, e para não gerar inconsistências, foi decidido utilizar os custos que tinham a data mais recente de cada produto.
+```{r}
+# Filtra para pegar as datas mais tardias
+sku_cost_latest <- sku_cost_2024 %>%
+  group_by(cod_prod) %>%
+  filter(as.Date(data_inicio, format="%d/%m/%y") == max(as.Date(data_inicio, format="%d/%m/%y"))) %>%
+  ungroup()
+
+head(sku_cost_latest)
+```
+
+**Passo 5:** mergiar essa tabela já filtrada com a "merged_data".
+```{r}
+result <- merge(sku_cost, merged_data, by = "cod_prod")
+
+head(result)
+```
+
+**Passo 6:** criar a coluna chamada lucro para que seja possível iniciar as análises.
+```{r}
+# Transformação do tipo de dado das colunas "preco" e "custo" para numérico
+result <- result %>%
+  mutate(preco_unitario = as.numeric(preco_unitario),
+         custo = as.numeric(custo))
+
+# Criação da coluna lucro
+result <- result %>%
+  mutate(lucro = (preco_unitario - custo) * quantidade)
+
+head(result)
+```
+
+# 3. Discovery dos dados
+
+Como as análises feitas são semelhantes às da sprint anterior, não será feita uma análise de cada gráfico, e sim uma conclusão geral.
+
+```{r}
+# Verificação da estrutura dos dados
+str(result)
+```
+```{r}
+# Resumo estatístico das variáveis
+summary(result)
+```
+De acordo com o resumo estatístico das variáveis foi possível tirar alguns insights, e para aprofundá-los mais ainda, foram feitas algumas análises gráficas univariadas.
+
+## 3.1 Quantidade vendida por transação 
+
+```{r}
+ggplot(result, aes(x = quantidade)) + 
+  geom_histogram(fill = "blue", color = "black", binwidth = 0.5, alpha = 0.5) +
+  labs(title = "Quantidade Vendida por Transação",
+       x = "Quantidade Vendida",
+       y = "Frequência") +
+  theme_minimal()
+```
+## 3.2 Densidade do lucro por transação
+
+```{r}
+ggplot(result, aes(x = lucro)) + 
+  geom_density(fill = "green", alpha = 0.5) +
+  labs(title = "Densidade do lucro por Transação",
+       x = "Lucro",
+       y = "Densidade")
+```
+
+## 3.3 Distribuição dos gastos em pordutos pelos clientes
+
+```{r}
+ggplot(result, aes(x = preco)) +
+  geom_histogram(binwidth = 5, fill = "lightgreen", color = "black", alpha = 0.7) +
+  labs(title = "Distribuição dos gastos em produtos pelos clientes",
+       x = "Preço",
+       y = "Frequência") +
+  theme_minimal()
+```
+
+# 4. Representação gráfica dos dados
+
+## 4.1 Lucro total por região
+
+```{r}
+lucro_por_regiao <- result %>%
+  group_by(regiao) %>%
+  summarise(lucro_total = sum(lucro, na.rm = TRUE))
+
+ggplot(lucro_por_regiao, aes(x = regiao, y = lucro_total)) + 
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Lucro Total por Região",
+       x = "Região",
+       y = "Lucro Total") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+## 4.2 Lucro total por diretoria
+
+```{r}
+lucro_por_diretoria <- result %>%
+  group_by(diretoria) %>%
+  summarise(lucro_total = sum(lucro, na.rm = TRUE))
+
+# Gerando o gráfico de barras com lucro total por região
+ggplot(lucro_por_diretoria, aes(x = diretoria, y = lucro_total)) + 
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Lucro Total por Diretoria",
+       x = "Região",
+       y = "Lucro Total") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+## 4.3 Frequência de quantidades compradas por região
+
+O gráfico a seguir foi gerado com o objetivo de descobrir se a quantidade de produtos iguais comprados em uma mesma transação influenciavam de certa forma no lucro da loja. Além disso, por São Paulo ter tido o maior resultado, foi necessário investigar a possibilidade de haver alguma outra variável que poderia influenciar nele. 
+
+```{r}
+freq_quantidade_por_regiao <- result %>%
+  group_by(regiao, quantidade) %>%
+  summarise(frequencia = n()) %>%
+  ungroup()
+
+# Criar o gráfico de barras
+ggplot(freq_quantidade_por_regiao, aes(x = regiao, y = frequencia, fill = as.factor(quantidade))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Frequência de Quantidades Compradas por Região",
+       x = "Região",
+       y = "Frequência",
+       fill = "Quantidade Comprada") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+## 4.4 Faturamento diário no ano de 2024
+
+```{r}
+transactions_data$data <- as.Date(transactions_data$data)
+
+# Calcular o faturamento diário
+faturamento_diario <- transactions_data %>%
+  mutate(faturamento = preco * quantidade) %>%
+  group_by(data) %>%
+  summarise(faturamento_total = sum(faturamento))
+
+# Criar o gráfico de barras para o faturamento diário
+ggplot(faturamento_diario, aes(x = data, y = faturamento_total)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Faturamento Diário",
+       x = "Data",
+       y = "Faturamento Total") +
+  theme_minimal()
+```
+
+# 5. Conclusão geral
+
+Ao comparar os gráficos gerados com os novos dados com os de análises feitas anteriormente, é possível perceber que mal houve diferença, mesmo com uma maior quantidade de transações. Isso mostra que mesmo com uma base pequena, os dados já estavam consistentes, e que as novas análises infelizmente não trouxeram nenhum novo insight.

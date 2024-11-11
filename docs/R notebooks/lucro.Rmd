@@ -1,0 +1,252 @@
+---
+title: "Lucro"
+output:
+  html_document:
+    df_print: paged
+---
+
+# 1. Setup inicial
+
+## 1.1 Instalações e packages
+
+1. Instalação dos pacotes necessários: tidyverse, GGally, corrplot, gridExtra, ggplot2, dplyr, FactoMineR, lubridate.
+
+2. Carregamento dos pacotes
+```{r}
+# Importação das bibliotecas
+library(tidyverse)
+library(GGally)
+library(corrplot)
+library(gridExtra)
+library(ggplot2)
+library(dplyr)
+library(FactoMineR)
+library(lubridate)
+```
+
+## 1.2 Download dos dados
+
+1. Acessar o drive do grupo: https://drive.google.com/drive/folders/1t1AYDIeHOKRCz7N-ENQL9QhgdVeUgSAP 
+
+2. Fazer download de todos os arquivos .csv
+
+3. Alterar o path abaixo para o relativo dos downloads dos datasets:
+```{r}
+# Coloque o caminho para o diretório onde os arquivos .csv foram importados
+dataPath <- "C:/Dev/projects/R/m11"
+```
+
+```{r}
+# Carregamento dos dados
+transactions_data <- read.csv(paste(dataPath, "/transaction_fact_v3_2024.csv", sep = ""))
+store_final <- read.csv(paste(dataPath, "/store_final.csv", sep = ""))
+sku_cost <- read.csv(paste(dataPath, "/sku_cost.csv", sep = ""))
+```
+
+# 2. Tratamento de dados
+
+Para esta análise, foi necessário fazer a junção de 3 datasets, sendo eles:
+
+- **transactions_data:** contém dados das transações do ano de 2024;
+- **store_final:** contém informações mais específicas de cada loja do varejo;
+- **sku_cost:** contém os custos de cada produto de acordo com certo data;
+
+A seguir, está o passo a passo de como foi feito esse tratamento:
+
+**Passo 1:** mergiar a tabela de transações com a das lojas para relacionar em qual loja cada transação ocorreu
+```{r}
+merged_data <- transactions_data %>%
+  left_join(store_final, by = c("cod_loja" = "nome_loja"))
+
+head(merged_data)
+```
+
+**Passo 2:** criar uma coluna chamada preço unitário, na qual terá os valores do preço de uma unidade de cada produto, já que a coluna "preço" apresenta um valor relacionado a quantidade comprada.
+```{r}
+merged_data <- merged_data %>%
+  mutate(preco_unitario = preco / quantidade)
+
+head(merged_data)
+```
+
+**Passo 3:** a tabela "sku_cost" apresenta os custos de diversos anos, mas como a de transações trabalha apenas com o ano de 2024, foi necessário filtrar a tabela para mostrar o custo dos produtos apenas no ano de 2024.
+```{r}
+# Transformação dos das datas para o tipo "data"
+sku_cost <- sku_cost %>%
+  mutate(data_inicio = as.Date(data_inicio, format = "%Y-%m-%d"),
+         data_fim = as.Date(data_fim, format = "%Y-%m-%d"))
+
+# Filtrar a última data para o ano de 2024
+sku_cost_2024 <- sku_cost %>%
+  filter(year(data_fim) == 2024)
+
+head(sku_cost_2024)
+```
+
+**Passo 4:** o custo dos produtos varia muito em um mesmo ano, e para não gerar inconsistências, foi decidido utilizar os custos que tinham a data mais recente de cada produto.
+```{r}
+# Filtra para pegar as datas mais tardias
+sku_cost_latest <- sku_cost_2024 %>%
+  group_by(cod_prod) %>%
+  filter(as.Date(data_inicio, format="%d/%m/%y") == max(as.Date(data_inicio, format="%d/%m/%y"))) %>%
+  ungroup()
+
+head(sku_cost_latest)
+```
+
+**Passo 5:** mergiar essa tabela já filtrada com a "merged_data".
+```{r}
+result <- merge(sku_cost, merged_data, by = "cod_prod")
+
+head(result)
+```
+
+**Passo 6:** criar a coluna chamada lucro para que seja possível iniciar as análises.
+```{r}
+# Transformação do tipo de dado das colunas "preco" e "custo" para numérico
+result <- result %>%
+  mutate(preco_unitario = as.numeric(preco_unitario),
+         custo = as.numeric(custo))
+
+# Criação da coluna lucro
+result <- result %>%
+  mutate(lucro = (preco_unitario - custo) * quantidade)
+
+head(result)
+```
+
+# 3. Discovery dos dados
+
+```{r}
+# Verificação da estrutura dos dados
+str(result)
+```
+```{r}
+# Resumo estatístico das variáveis
+summary(result)
+```
+De acordo com o resumo estatístico das variáveis foi possível tirar alguns insights, e para aprofundá-los mais ainda, foram feitas algumas análises gráficas univariadas.
+
+## 3.1 Quantidade vendida por transação 
+
+```{r}
+ggplot(result, aes(x = quantidade)) + 
+  geom_histogram(fill = "blue", color = "black", binwidth = 0.5, alpha = 0.5) +
+  labs(title = "Quantidade Vendida por Transação",
+       x = "Quantidade Vendida",
+       y = "Frequência") +
+  theme_minimal()
+```
+**Análise:** esse gráfico permitiu descrobrir que um vendedor tem mais chances de vender até 2 produtos similares em uma mesma compra, mas que a partir da terceira unidade isso se torna mais difícil, ou seja, o vendedor pode usar essa informação a seu favor em casos que o cliente esteja levando apenas uma unidade de certo produto, para oferecer uma outra.
+
+## 3.2 Densidade do lucro por transação
+
+```{r}
+ggplot(result, aes(x = lucro)) + 
+  geom_density(fill = "green", alpha = 0.5) +
+  labs(title = "Densidade do lucro por Transação",
+       x = "Lucro",
+       y = "Densidade")
+```
+**Observação:** o lucro nesse caso é apenas a diferença entre o custo e o valor pelo qual os produtos foram vendidos, então gastos fixos com a loja e entre outros não entraram na conta.
+
+**Análise:** Esse gráfico se refere a densidade do lucro por transação no ano de 2024 e permite inferir que as lojas costumam lucrar até 100 reais nas transações, tendo uma concentração maior ainda na faixa de menos de R$ 50. Isso pode ser algo a se pensar para que os vendedores se motivem mais ainda a vender produtos com maior margem de lucro.
+
+## 3.3 Distribuição dos gastos em pordutos pelos clientes
+
+```{r}
+ggplot(result, aes(x = preco)) +
+  geom_histogram(binwidth = 5, fill = "lightgreen", color = "black", alpha = 0.7) +
+  labs(title = "Distribuição dos gastos em produtos pelos clientes",
+       x = "Preço",
+       y = "Frequência") +
+  theme_minimal()
+```
+**Observação:** o preço de cada transação do gráfico não está agrupado por compra, isso significa que caso uma pessoa tenha comprado 2 produtos diferentes, terão duas linhas diferentes no gráfico.
+
+**Análise:** o objetivo dessa análise é entender qual o valor máximo que os clientes da CosmeticCo gastam em um mesmo produto. Com ela, foi possível descobrir que esse valor gira em torno de R$ 250,00. Essa informação pode ser valiosa para o vendedor, pois passa a ter a oportunidade de se arriscar a recomendar o cliente a levar uma unidade a mais, desde que não passe dessa margem, pois quanto mais passar, mais difícil do cliente aceitar a recomendação.
+
+# 4. Representação gráfica dos dados
+
+## 4.1 Lucro total por região
+
+```{r}
+lucro_por_regiao <- result %>%
+  group_by(regiao) %>%
+  summarise(lucro_total = sum(lucro, na.rm = TRUE))
+
+ggplot(lucro_por_regiao, aes(x = regiao, y = lucro_total)) + 
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Lucro Total por Região",
+       x = "Região",
+       y = "Lucro Total") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+**Observação:** o lucro nesse caso é apenas a diferença entre o custo e o valor pelo qual os produtos foram vendidos, então gastos fixos com a loja e entre outros não entraram na conta.
+
+**Análise:** como é posível perceber, São Paulo num geral teve um lucro maior comparado a outros estados, o que de certa forma já era esperado, por se tratrar de um estado muito populoso. Por outro lado, isso não significa que as geriões de São Paulo possuem um melhor desempenho, pois o lucro tem muita relação com o estoque, já que tudo depende do quanto a loja compra pelo quando ela vende. Pensando nisso, percebeu-se a necesseidade de realizar análises mais profundas, do lucro de loja pro região, para entender o perfil de venda, além de também relacionar o estoque, que irá permitir fazer um cálculo mais assetivo do desempenho das lojas.
+
+## 4.2 Lucro total por diretoria
+
+```{r}
+lucro_por_diretoria <- result %>%
+  group_by(diretoria) %>%
+  summarise(lucro_total = sum(lucro, na.rm = TRUE))
+
+# Gerando o gráfico de barras com lucro total por região
+ggplot(lucro_por_diretoria, aes(x = diretoria, y = lucro_total)) + 
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Lucro Total por Diretoria",
+       x = "Região",
+       y = "Lucro Total") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+**Observação:** semelhante ao caso acima, o lucro também é apenas a diferença entre o custo e o valor pelo qual os produtos foram vendidos, então gastos fixos com a loja e entre outros não entraram na conta.
+
+**Análise:** essa análise serviu de complemento a anterior,e com ela pode-se perceber que a diferença de lucro entre uma diretoria e outra não é tão discrepante, e isso deve ser investigado com mais detalhes, pois porque pode auxiliar a tirar insgihts de como cada região incrementa no resultado, e se existe alguma maneira de melhorá-lo com base nas outras.
+
+## 4.3 Frequência de quantidades compradas por região
+
+O gráfico a seguir foi gerado com o objetivo de descobrir se a quantidade de produtos iguais comprados em uma mesma transação influenciavam de certa forma no lucro da loja. Além disso, por São Paulo ter tido o maior resultado, foi necessário investigar a possibilidade de haver alguma outra variável que poderia influenciar nele. 
+
+```{r}
+freq_quantidade_por_regiao <- result %>%
+  group_by(regiao, quantidade) %>%
+  summarise(frequencia = n()) %>%
+  ungroup()
+
+# Criar o gráfico de barras
+ggplot(freq_quantidade_por_regiao, aes(x = regiao, y = frequencia, fill = as.factor(quantidade))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Frequência de Quantidades Compradas por Região",
+       x = "Região",
+       y = "Frequência",
+       fill = "Quantidade Comprada") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+**Observação:** frequência de quantidades compradas, nada mais é do que o quão frequente foi a compra de até 4 produtos iguais em uma única transação por região.
+
+**Análise:** esse gráfico permitiu inferir que a quantidade comprada por região de um mesmo produto está extremamente proporcional ao lucro. Isso mostrou que a variável "quantidade" pode ser descartada ao se fazer análises relacionadas ao lucro. Além disso, foi percebida a necessidade de fazer mais análises de comportamneto das variáveis com o lucro, para entender seus comportamentos.
+
+# 5. Conclusão geral
+
+Considerando todas as análises, foi possível extrair alguns insights que se bem trabalhados serão úteis para os vendedores, além de descobrir a necessidade de uma análise mais profunda sobre o lucro, comparando lojas de uma mesma região, e possivelmente o estoque de cada uma.
+
+# 6. Governança de dados
+
+Os dados usados para as análises gráficas presentes neste documento são referentes a 3 datasets diferentes:
+
+- **transactions_data:** contém dados das transações do ano de 2024;
+- **store_final:** contém informações mais específicas de cada loja do varejo;
+- **sku_cost:** contém os custos de cada produto de acordo com certo data;
+
+A maioria dos dados acima são financeiros e por isso são privados da CosmeticCo (apenas funcionários tem acesso). Porém, a maioria desses dados são mais confidenciais que outros e devem ser acessados por cargos maiores. Abaixo, está uma descrição de como a empresa parceira pode deixar o acesso dos dados presentes neste documento:
+
+- **Vendedores:** podem ter acesso apenas aos dados da *transactions_data* desde que essa mostre apenas linhas referentes às vendas daquele funcionário em específico. Além disso, talvez algumas análises que partam de outros dados possam ser interessantes a ele, como o valor máximo que os clientes costumam gastar em um único produto;
+- **Gerentes:** podem ter acesso aos dados da tabela *sku_cost* para entender como isso reflete nos preços que irá cobrar na sua loja. Além disso, podem ter acesso aos dados da tabela *transactions_data* que são referentes à sua loja, ou seja, à todas as transações que ocorrem em sua loja;
+- **Diretores:** possuem acesso aos dados de todas as tabelas, com excessão da *transactions_data* com os dados limitados ao conjunto de regiões específicas que cada diretor comanda;

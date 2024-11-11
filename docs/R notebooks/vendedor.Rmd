@@ -1,0 +1,625 @@
+---
+title: "Vendedor"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Variável: vendas realizadas por um vendedor em x período de tempo
+
+O foco das análises realizadas neste documento é a entidade "Vendedor", presente no contexto da empresa Cosmetic.Co. A seguir, é possivel identificar uma exploração completa de 3 datasets disponibilidados pelos parceiros de projeto, que dizem respeito dos vendedores da empresa. São esses:
+
+-   **employee_final:** base de colaboradores das lojas;
+-   **targets_salesperson_final_v3.csv:** base de metas de vendas dos vendedores;
+-   **2024.csv:** base de transações.
+
+# 1. Setup inicial
+
+## 1.1 Instalações e Packages
+
+1.  Instalação dos pacotes necessários: tidyverse, GGally, corrplot, gridExtra, scales, readr, dplyr.
+
+2.  Carregamento dos pacotes
+
+    ```{r}
+    library(tidyverse)
+    library(GGally)
+    library(corrplot)
+    library(gridExtra)
+    library(scales)
+    library(ggplot2)
+    ```
+
+    ```{r}
+    # Carregar pacotes
+    library(readr)
+    #library(dplyr)
+    ```
+
+## 1.2 Download dos dados
+
+1.  Acessar o drive do grupo: <https://drive.google.com/drive/u/1/folders/1V0Cah7fPrHMwab-doYhz3uC-GANfbtNA>
+
+2.  Fazer download de todos os arquivos .csv
+
+3.  Alterar o path abaixo para o relativo dos downloads dos datasets:
+
+    ```{r}
+    #dataPath <- "../Desktop/"
+    dataPath <- "C:/Dev/projects/R/m11"
+    ```
+
+4.  Run All
+
+# 2. Carregamento e Preparação dos dados
+
+## 2.1 Vendedores
+
+-   **Carregamento** dos dados:
+
+    ```{r}
+    employee_final <- read.csv(file.path(dataPath, "employee_final.csv"))
+
+    targets_salesperson_final <- read.csv(file.path(dataPath,"targets_salesperson_final_v3.csv"))
+
+    transactions_2024 <- read.csv(file.path(dataPath,"2024.csv"))
+    ```
+
+-   Visualização das **primeiras linhas** dos datasets:
+
+    ```{r}
+    head(employee_final)
+    ```
+
+    ```{r}
+    head(targets_salesperson_final)
+    ```
+
+    ```{r}
+    head(transactions_2024)
+    ```
+
+-   Verificação da **Estrutura dos dados:**
+
+    ```{r}
+    str(employee_final)
+    ```
+
+    ```{r}
+    str(targets_salesperson_final)
+    ```
+
+    ```{r}
+    str(transactions_2024)
+    ```
+
+# 3. Resumo estatístico e Descrição dos dados
+
+## 3.1 Resumo estatistico das variáveis
+
+```{r}
+summary(employee_final)
+```
+
+```{r}
+summary(targets_salesperson_final)
+```
+
+```{r}
+summary(transactions_2024)
+```
+
+## 3.2 Descrição das variáveis
+
+### 3.2.1 df employee_final:
+
+-   "**id_employee"** será tratada como o identificador único dos dados presentes no dataset.
+
+-   **"name", "surname" e "cpf"** são meramente identificadores dos colaboradores, em que apenas o cpf é único.
+
+-   "**status**" nos diz se aquele colaborador está ou não ativo na empresa, possibilitando que, posteriormente, os colaboradores desligados sejam removidos da base de dados, já que seus dados não serão considerados nas análises.
+
+-   "**role**" possui 2 possiveis valores, e diferencia os colaboradores que são vendedores ou gerentes
+
+-   "**inicial_date**" e "**end_date**" indicam as datas de entrada e saída do colaborador na empresa, respectivamente. Em que apenas os desligados terão a data de saída preenchida.
+
+-   "**store_id**" é o identificador da loja em que o colaborador trabalha, em que os primeiros 2 caracteres do código representam a sigla do estado em que se encontram.
+
+### 3.2.2 df targets_salesperson_final:
+
+-   **id_employee**: Identificador único do funcionário - num
+
+-   **sales_target**: Meta de vendas - num
+
+-   **month**: Mês - chr
+
+### 3.2.3 df transaction_2024:
+
+-   **data**: Data da transação - Date
+
+-   **cod_vendedor**: Identificador único do vendedor - num
+
+-   **cod_loja**: Identificador único da loja - chr
+
+-   **cod_transacao**: Identificador único da transação - chr
+
+-   **quantidade**: Quantidade vendida - num
+
+-   **cod_prod**: Identificador único do produto - num
+
+-   **preco**: Preço do produto - num
+
+## 3.3 Escolha das variáveis
+
+Para a tabela dos dados dos funcionários queremos otimizar a análise de dados e focar nas variáveis que realmente influenciam os resultados, portanto as colunas "name", "surname" , "cpf" e "end_date" serão removidas do dataset. As 3 primeiras contêm dados puramente identificadores (e sensíveis), e não possuem impacto direto nas métricas que irei analisar daqui pra frente. A ultima, só é preenchida quando o colaborador já foi desligado, e também não será útil para as analises em foco. Além disso, manter essas colunas pode aumentar desnecessariamente o volume de dados processados, tornando a análise menos eficiente e possivelmente dificultando a identificação de padrões relevantes.
+
+Todas as variáveis da tabela contendo os dados das metas de vendas dos funcionários serão utilizadas em futuras análises e na criação de novos dados, o que elimina a necessidade de remover qualquer coluna. No entanto, para a tabela com as transações e para esta análise específica, que se concentra apenas nos funcionários e em suas vendas de forma geral, excluiremos a coluna de código de produto, pois ela não será utilizada inicialmente em nenhuma análise.
+
+# 4. Tratamento dos dados
+
+O processo atual de tratamento dos daos inclui a filtragem e remoção de amostras, na exclusão de variáveis irrelevantes para a análise, e na integração de diferentes fontes de dados. Esses processos nos permitirão refinar a base de dados, garantindo que a análise subsequente seja otimizada e produza os melhores insights possíveis.
+
+Em um momento futuro, iremos desenvolver mais essa etapa no que tange à transformação dos dados textuais em numéricos, através dos processos de One-Hot Encoding e Label Encoding.
+
+## 4.1 Verificação de dados faltantes
+
+```{r}
+any(is.na(employee_final))
+```
+
+```{r}
+any(is.na(targets_salesperson_final))
+```
+
+```{r}
+any(is.na(transactions_2024))
+```
+
+## 4.2 Filtros e remoção de variáveis
+
+### 4.2.1 employee_df
+
+```{r}
+employee_df <- subset(employee_final, select = -c(name, surname, cpf, end_date))
+```
+
+```{r}
+(cat(colnames(employee_df), sep = "\n"))
+```
+
+```{r}
+head(employee_df)
+```
+
+### 4.2.2 targets_salesperson_final e transactions_2024
+
+Em relação às tabelas dados_salesperson e dados_transaction, iremos aplicar uma filtragem de período de tempo e loja.
+
+O filtro aplicado nas tabelas é justificado por três frentes principais: limitação de recursos computacionais, facilitação da visualização dos dados, e direcionamento de insights - identificar padrões específicos ou anomalias dentro de um escopo temporal e geográfico restrito.
+
+Ao limitar o dataset de metas de vendas a um mês especifico, a análise se concentra em um período definido, facilitando a comparação entre os funcionários dentro desse mês específico.
+
+Já o filtro aplicado às transações, restringindo-as a uma data especifica e a uma loja também específica, permite uma análise detalhada das operações em um mês e local, possibilitando a identificação de tendências diárias, impacto de eventos sazonais ou avaliação da performance de uma unidade específica, além da remoção da coluna que identifica o código do produto que foi vendido.
+
+```{r}
+# Filtrar por mês
+filtered_sales_target <- subset(targets_salesperson_final, month == "01/2024")
+
+# Filtrar por mês e loja
+filtered_transactions <- subset(transactions_2024, data == "2024-01-30" & grepl("SP Capital Centro_87", cod_loja))
+
+# Dropar a coluna com o código do produto
+filtered_transactions <- filtered_transactions %>%
+  select(-cod_prod)
+```
+
+# 5. Discovery de dados - Visualizações gráficas
+
+## 5.1 Análise Univariada
+
+Nessa etapa, vamos analisar cada variável de forma individual, para entender os valores de cada uma, gerar gráficos e identificar possíveis padrões.
+
+### Status
+
+```{r}
+# Criar o gráfico de barras com rótulos "ativo" e "inativo" diretamente
+    ggplot(employee_df, aes(x = recode(status, "ativo" = "ativo", .default = "inativo"), 
+                            fill = recode(status, "ativo" = "verde", .default = "vermelho"))) +
+      geom_bar() +
+      scale_fill_manual(values = c("verde" = "green", "vermelho" = "red")) +
+      theme_minimal() +
+      geom_text(stat = 'count', aes(label = after_stat(count)), vjust = -0.5) +
+      theme(legend.position = "none") +
+      labs(title = "Colaboradores ativos x inativos", x = "Status", y = "Número de Colaboradores")
+```
+
+-   De um total de 920 colaboradores, foram identificados 100 colaboradores inativos. Ou seja, 100 colaboradores que não trabalham mais na empresa, atualmente. Por esse motivo, esses colaboradores serão removidos do dataframe, e não serão considerados nas análises futuras.
+
+```{r}
+# Filtrar o dataframe para manter apenas os colaboradores ativos
+employee_df <- employee_df %>%
+  filter(status == "ativo")
+```
+
+```{r}
+# Gráfico atualizado apenas com colaboradores ativos
+    ggplot(employee_df, aes(x = recode(status, "ativo" = "ativo", .default = "inativo"), 
+                            fill = recode(status, "ativo" = "verde", .default = "vermelho"))) +
+      geom_bar() +
+      scale_fill_manual(values = c("verde" = "green", "vermelho" = "red")) +
+      theme_minimal() +
+      geom_text(stat = 'count', aes(label = after_stat(count))) +
+      theme(legend.position = "none") +
+      labs(title = "Colaboradores totais", x = "Status", y = "Número de Colaboradores")
+```
+
+### Cargos
+
+```{r}
+# Calcular as frequências da variavel role
+role_counts <- employee_df %>% count(role)
+
+# Criar gráfico com valores absolutos e percentuais
+ggplot(role_counts, aes(x = "", y = n, fill = role)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(title = "Distribuição do cargo do colaborador") +
+  geom_text(aes(label = paste0(n, " (", round(100 * n / sum(n), 1), "%)")),
+            position = position_stack(vjust = 0.5))
+```
+
+### Lojas
+
+```{r}
+# Contar quantas vezes cada valor de store_id aparece
+store_id_counts <- employee_df %>%
+  count(store_id)
+
+# Exibir o resultado
+store_id_counts
+```
+
+```{r}
+# Validar se todos os valores aparecem exatamente 4 vezes
+all_four_times <- all(store_id_counts$n == 4)
+
+# Exibir o resultado
+all_four_times
+```
+
+```{r}
+# Agrupar por store_id e contar o número de funcionários por loja
+dot_data <- employee_df %>% group_by(store_id) %>% summarise(funcionarios = n())
+ggplot(dot_data, aes(x = store_id, y = funcionarios)) + geom_point(color = "blue", size = 1) + theme_minimal() + labs(title = "Distribuição Uniforme de Funcionários por Loja", x = "Lojas", y = "Número de Funcionários") + theme(axis.text.x = element_blank()) 
+
+```
+
+### Data inicial
+
+Nesse caso, vamos agrupar os valores da variavel em uma nova variavel "initial_year", para analisar os valores agrupados e criar categorias.
+
+```{r fig.width=9}
+# Converter a variável de data para o formato Date
+employee_df <- employee_df %>%
+  mutate(initial_date = as.Date(initial_date, format = "%d/%m/%Y"))
+
+# Extrair o ano da data
+employee_df <- employee_df %>%
+  mutate(initial_year = format(initial_date, "%Y"))
+
+# Agrupar por ano e contar o número de ocorrências
+bar_data <- employee_df %>%
+  group_by(initial_year) %>%
+  summarise(quantidade = n())
+
+# Criar o gráfico de barras com valores absolutos
+ggplot(bar_data, aes(x = initial_year, y = quantidade, fill = initial_year)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = quantidade), vjust = -0.5, color = "black") +
+  theme_minimal() +
+  labs(title = "Quantidade de Itens por Ano", x = "Ano", y = "Quantidade de Itens") +
+  theme(legend.position = "none")  # Remove a legenda
+```
+
+### Distribuição das metas de vendas por vendedor
+
+```{r}
+hist(filtered_sales_target$sales_target, main = "Distribuição das Metas de Vendas por Vendedor", xlab = "Meta de Vendas")
+```
+
+O histograma mostra a distribuição das metas de vendas entre os diferentes vendedores.
+
+As metas de vendas variam de 80.000 a 100.000, também existe uma distribuição uniforme das metas de vendas dentro deste intervalo. Frequências ligeiramente mais altas são observadas nos intervalos em torno de 85.000 a 90.000 e 95.000 a 100.000.
+
+Também observamos algumas implicações, a distribuição indica que as metas de vendas são estabelecidas de maneira bastante uniforme entre os vendedores, sem outliers extremos no conjunto de dados. Os vendedores têm metas de vendas semelhantes, com uma concentração nas faixas mais altas, ou seja, possuem um potencial alto padrão estabelecido pela gestão.
+
+### Quantidade vendida por vendedor
+
+```{r}
+boxplot(filtered_transactions$quantidade ~ filtered_transactions$cod_vendedor, main = "Quantidade Vendida por Vendedor", xlab = "Vendedor", ylab = "Quantidade")
+```
+
+A mediana da quantidade vendida varia ligeiramente entre os vendedores, com o vendedor 791 tendo uma mediana mais baixa em comparação com os outros. O intervalo interquartil é relativamente consistente entre os vendedores 132, 469 e 515, enquanto o vendedor 791 tem um IQR ligeiramente mais estreito. Existem potenciais outliers nos dados, indicados pelos pontos acima dos whiskers.
+
+### Preço médio dos produtos vendidos por vendedor
+
+```{r}
+
+avg_price_per_seller <- aggregate(filtered_transactions$preco, by=list(filtered_transactions$cod_vendedor), FUN=mean)
+
+barplot(avg_price_per_seller$x, names.arg=avg_price_per_seller$Group.1, main = "Preço Médio dos Produtos Vendidos por Vendedor", xlab = "Vendedor", ylab = "Preço Médio")
+```
+
+O gráfico ilustra o preço médio dos produtos vendidos por cada vendedor. O vendedor 132 tem o maior preço médio de produto, significativamente maior do que os outros vendedores. Os vendedores 469, 515 e 791 têm preços médios semelhantes, indicando uma estratégia de precificação mais uniforme entre eles.
+
+### Identificação e discussão sobre outliers na quantidade vendida por vendedor.
+
+```{r}
+boxplot(filtered_transactions$quantidade ~ filtered_transactions$cod_vendedor, main = "Outliers na Quantidade Vendida por Vendedor", xlab = "Vendedor", ylab = "Quantidade")
+```
+
+Este boxplot repete a análise da quantidade vendida, mas se concentra especificamente na identificação de outliers. Os outliers estão presentes de forma proeminente em todos os vendedores, indicando volumes de vendas ocasionalmente altos ou discrepâncias nos dados de vendas. O vendedor 132 tem a maior dispersão de outliers, sugerindo mais variabilidade no desempenho de vendas.
+
+A presença de outliers em todos os vendedores destaca a necessidade de uma análise mais detalhada das estratégias e métricas de desempenho de vendas. É necessário uma análise futura para entender as razões por trás desses outliers pode ajudar a ajustar as metas ou estratégias de vendas para melhorar a consistência.
+
+## 5.2 Análise Bivariada
+
+### Relação entre loja e cargo
+
+-   A partir do cruzamento entre as variaveis [store_id e role]{.underline}, será possivel descobrir quantos gerentes tem em cada loja, e quantos vendedores.
+
+-   Na analise univariada, sabiamos que todas as lojas tem 4 colaboradores. Agora, com o cruzamento dos valores das duas variáveis, foi possivel entender que em todas as lojas, não só temos apenas 4 colaboradores, como 3 deles sempre são vendedores, e, logo, apenas 1 é gerente.
+
+```{r}
+# Filtrar os dados para considerar apenas os vendedores
+vendedor_data <- employee_df %>% filter(role == "vendedor")
+
+vendedor_count <- vendedor_data %>%
+  group_by(store_id) %>%
+  summarise(quantidade_vendedor = n())
+
+ggplot(vendedor_count, aes(x = store_id, y = quantidade_vendedor)) +
+  geom_point(color = "blue", size = 3) +
+  theme_minimal() +
+  labs(title = "Vendedores por loja", x = "Loja", y = "Quantidade de Vendedores") + theme(axis.text.x = element_blank())
+```
+
+### Tabela target dos vendedores e transações anuais
+
+-   Total de vendas por quantidade e vendas
+
+```{r}
+aggregated_transactions <- filtered_transactions %>%
+  group_by(cod_vendedor) %>%
+  summarise(total_quantidade = sum(quantidade),
+            total_preco = sum(preco))
+
+# Verificar a estrutura dos dados agregados
+str(aggregated_transactions)
+
+ggplot(aggregated_transactions, aes(x=factor(cod_vendedor), y=total_quantidade)) +
+  geom_bar(stat="identity", fill="steelblue") +
+  labs(title="Quantidade Total de Vendas por Colaborador", x="Colaborador", y="Quantidade Total de Vendas") +
+  theme_minimal()
+
+ggplot(aggregated_transactions, aes(x=factor(cod_vendedor), y=total_preco)) +
+  geom_bar(stat="identity", fill="darkorange") +
+  labs(title="Preço Total das Vendas por Colaborador", x="Colaborador", y="Preço Total das Vendas") +
+  theme_minimal()
+
+# Realizar o merge entre aggregated_transactions e filtered_sales_target
+merged_data <- merge(aggregated_transactions, filtered_sales_target[, c("id_employee", "sales_target")], 
+                     by.x = "cod_vendedor", by.y = "id_employee", all.x = TRUE)
+
+# Criar uma nova coluna que indica se a meta foi atingida
+merged_data$meta_atingida <- merged_data$total_preco >= merged_data$sales_target
+
+str(merged_data)
+```
+
+-   Visualização de Relações entre Variáveis
+
+Agora exploraremos as relações entre as variáveis utilizando gráficos de dispersão (scatter plots) ou gráficos de barras. Isso nos permitirá identificar possíveis correlações ou padrões entre as variáveis.
+
+```{r}
+# Fazer o merge e incluir apenas as correspondências
+merged_data <- merge(filtered_transactions, filtered_sales_target, by.x="cod_vendedor", by.y="id_employee", all=FALSE)
+
+# Remover linhas com NA para garantir que as colunas 'sales_target' e 'quantidade' estão preenchidas
+merged_data <- na.omit(merged_data)
+
+# Verificar a estrutura do merged_data para garantir que as colunas estão alinhadas
+str(merged_data)
+
+# Realizar o plot após garantir que as colunas têm o mesmo comprimento
+
+plot(jitter(merged_data$sales_target), merged_data$quantidade, 
+     main = "Relação entre Metas e Quantidade Vendida", 
+     xlab = "Meta de Vendas", 
+     ylab = "Quantidade Vendida")
+
+```
+
+Observa-se que, apesar de algumas variações nas metas de vendas (que variam entre 83.000 e 85.500), a quantidade vendida pelos vendedores tende a se concentrar em poucos valores discretos (de 1 a 6). Isso sugere que, independentemente da meta atribuída, a quantidade vendida por cada vendedor não apresenta uma correlação clara com a meta estipulada. As metas parecem não influenciar diretamente o desempenho dos vendedores, ou existem outros fatores mais determinantes que afetam a quantidade vendida. Uma possível implicação é que a definição de metas pode precisar ser revista ou ajustada, ou que intervenções adicionais, como treinamentos ou incentivos, possam ser necessárias para melhorar a relação entre a meta estabelecida e o desempenho real.
+
+```{r}
+# Calcular o preço médio e a quantidade total vendida por vendedor
+avg_price_per_seller <- aggregate(filtered_transactions$preco, by=list(filtered_transactions$cod_vendedor), FUN=mean)
+colnames(avg_price_per_seller) <- c("cod_vendedor", "avg_price")
+
+total_quantity_per_seller <- aggregate(filtered_transactions$quantidade, by=list(filtered_transactions$cod_vendedor), FUN=sum)
+colnames(total_quantity_per_seller) <- c("cod_vendedor", "total_quantity")
+
+# Unir os dados de preço médio e quantidade total
+price_quantity_data <- merge(avg_price_per_seller, total_quantity_per_seller, by="cod_vendedor")
+
+# Criar gráfico de dispersão para visualizar a relação entre preço médio e quantidade total vendida
+plot(price_quantity_data$avg_price, price_quantity_data$total_quantity,
+     main = "Relação entre Preço Médio e Quantidade Total Vendida por Vendedor",
+     xlab = "Preço Médio dos Produtos",
+     ylab = "Quantidade Total Vendida",
+     pch = 19,
+     col = factor(price_quantity_data$cod_vendedor))
+
+# Adicionar uma linha de ajuste para entender a tendência
+abline(lm(total_quantity ~ avg_price, data = price_quantity_data), col="blue")
+
+# Adicionar uma legenda
+legend("topright", legend=unique(price_quantity_data$cod_vendedor), col=1:length(unique(price_quantity_data$cod_vendedor)), pch=19)
+
+```
+
+O gráfico mostra a relação entre o preço médio dos produtos e a quantidade total vendida por quatro diferentes vendedores, identificados pelos números 132, 469, 515, e 791. A linha de tendência negativa indica que, em geral, conforme o preço médio dos produtos aumenta, a quantidade total vendida tende a diminuir. Isso sugere uma relação inversa entre preço e quantidade vendida, implicando que produtos com preços mais altos podem ter menor demanda, ou que os vendedores que oferecem produtos a preços mais elevados vendem menos unidades. Essa informação pode ser valiosa para ajustar estratégias de precificação, especialmente se o objetivo for maximizar o volume de vendas. Contudo, é importante considerar que outros fatores, como a qualidade do produto, concorrência, e segmentação de mercado, também influenciam as vendas e devem ser analisados em conjunto com essa relação.
+
+### Análise de Correlação
+
+Com essa análise calcularemos e visualizaremos a matriz de correlação entre as variáveis numéricas. Isso nos ajudará a identificar relações lineares entre as variáveis. Na matriz de correlação, estaremos observando a relação linear entre as variáveis sales_target, quantidade, e preço. Também inclui o sales_target pois a correlação alta entre sales_target e ele mesmo é esperada na análise, pois qualquer variável tem correlação perfeita consigo mesma (correlação = 1). O objetivo dessa matriz de correlação é observar como as outras variáveis (quantidade e preço) estão relacionadas entre si e com o sales_target.
+
+```{r}
+numeric_vars_seller <- merged_data[, c("sales_target", "quantidade", "preco")]
+cor_matrix_seller <- cor(numeric_vars_seller)
+corrplot::corrplot(cor_matrix_seller, method = "circle")
+```
+
+## 5.3 Análise Multivariada
+
+### Análise de Componentes Principais (PCA)
+
+Depois da análise de correlação vamos realizar uma Análise de Componentes Principais (PCA) para reduzir a dimensionalidade dos dados e identificar padrões subjacentes. No PCA, estamos transformando os dados originais em componentes principais que são combinações lineares das variáveis originais (sales_target, quantidade, e preço). O PCA não se limita a analisar sales_target em relação a si mesmo. Pelo contrário, ele está tentando capturar a variância total nos dados através das componentes principais.
+
+```{r}
+pca_data_seller <- scale(numeric_vars_seller)
+pca_result_seller <- prcomp(pca_data_seller)
+
+# Criar um dataframe com os resultados
+pca_df <- data.frame(PC1 = pca_result_seller$x[, 1], 
+                     PC2 = pca_result_seller$x[, 2],
+                     sales_target = numeric_vars_seller$sales_target,
+                     quantidade = numeric_vars_seller$quantidade,
+                     preco = numeric_vars_seller$preco)
+
+# Plotar
+ggplot(pca_df, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = sales_target), size = 3) + # Usar cor para uma variável contínua
+  geom_text(aes(label = rownames(pca_df)), hjust = 1.5, vjust = 1.5, size = 3) + 
+  
+  xlab("Componente 1") +
+  ylab("Componente 2") +
+  ggtitle("Biplot das Componentes Principais") +
+  theme_minimal() +
+  scale_color_gradient(low = "blue", high = "red") # Gradiente de cor para "sales_target"
+```
+
+No biplot, as cores estão representando a variável sales_target, mas as componentes principais (PC1 e PC2) não são diretamente as variáveis originais, mas sim combinações das variáveis originais que explicam a maior parte da variância.
+
+```{r}
+
+aggregated_transactions_id <- transactions_2024 %>%
+  group_by(cod_vendedor, data) %>%
+  summarise(total_quantidade = sum(quantidade),
+            total_preco = sum(preco),
+            .groups = 'drop')
+
+
+str(aggregated_transactions_id)
+
+```
+
+```{r}
+# Escolher um ID específico para análise
+ano_desejado <- 2024
+id_vendedor <- 121
+
+# Filtrar as transações agregadas para o vendedor específico
+filtered_transactions <- aggregated_transactions_id %>%
+  filter(cod_vendedor == id_vendedor)
+
+filtered_transactions <- filtered_transactions %>%
+  mutate(
+    data = as.Date(data),
+    ano = format(data, "%Y"),
+    mes = format(data, "%m")
+  )
+
+aggregated_filtered_transactions <- filtered_transactions %>%
+  group_by(cod_vendedor, ano, mes) %>%
+  summarise(
+    total_quantidade = sum(total_quantidade),
+    total_preco = sum(total_preco),
+    .groups = 'drop'
+  )
+
+aggregated_filtered_transactions <- aggregated_filtered_transactions %>%
+  mutate(mes_ano = paste0(mes, "/", ano))
+
+# Filtrar as metas de vendas para o mesmo vendedor e mesmo período
+filtered_sales_target <- targets_salesperson_final %>%
+  filter(id_employee == id_vendedor)
+
+filtered_sales_target <- filtered_sales_target %>%
+  mutate(ano = as.numeric(sub(".*\\/(\\d{4})$", "\\1", month)))
+
+filtered_sales_target <- filtered_sales_target %>%
+  filter(ano == as.numeric(ano_desejado))
+
+head(aggregated_filtered_transactions)
+head(filtered_sales_target)
+```
+
+```{r}
+combined_data <- merge(aggregated_filtered_transactions, 
+                       filtered_sales_target, 
+                       by.x = c("cod_vendedor", "ano", "mes_ano"), 
+                       by.y = c("id_employee", "ano", "month"))
+
+library(ggplot2)
+
+print(combined_data)
+
+ggplot(combined_data, aes(x = mes_ano)) +
+  geom_line(aes(y = total_preco, color = "Vendas Realizadas", group = 1)) +
+  geom_point(aes(y = total_preco, color = "Vendas Realizadas")) +
+  geom_line(aes(y = sales_target, color = "Meta de Vendas", group = 1)) +
+  geom_point(aes(y = sales_target, color = "Meta de Vendas")) +
+  labs(title = "Comparação entre Vendas Realizadas e Meta de Vendas",
+       x = "Mês/Ano",
+       y = "Valor (R$)",
+       color = "Legenda") +
+  theme_minimal() +
+  scale_color_manual(values = c("Vendas Realizadas" = "blue", "Meta de Vendas" = "red")) +
+  scale_y_continuous(labels = scales::comma) +  # Formata os números do eixo y
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# 6. Insights obtidos
+
+A análise mostrou uma ampla distribuição das metas de vendas (sales_target) entre os vendedores, indicando uma diversidade significativa nas capacidades ou regiões de atuação. Observou-se também uma variação notável na quantidade vendida por diferentes vendedores, com alguns outliers destacando casos isolados de vendas muito superiores ao usual, possivelmente devido a promoções ou campanhas específicas. No que diz respeito aos preços médios dos produtos vendidos, notou-se que diferentes vendedores trabalham com níveis de preço distintos, refletindo variações em suas estratégias de venda, tipos de produtos e segmentação de mercado.
+
+Ao examinar a relação entre as metas de vendas e a quantidade vendida, não foi identificado um padrão claro, sugerindo que fatores adicionais influenciam o desempenho dos vendedores. A análise de componentes principais (PCA) trouxe à tona alguns padrões interessantes: o primeiro componente principal (PC1) explica a maior parte da variância nos dados, diferenciando claramente os vendedores com base nas metas de vendas, destacando sales_target como a principal variável diferenciadora. O segundo componente principal (PC2), que explica uma parte menor da variância, está associado às variáveis quantidade e preço, capturando variações adicionais que podem estar relacionadas a estratégias de preço ou volume de vendas. O terceiro componente principal (PC3) captura uma pequena proporção da variância total, refletindo variabilidade residual e sendo menos relevante para a interpretação geral dos dados. Além disso, o biplot das componentes principais revelou agrupamentos interessantes entre os vendedores, sugerindo características subjacentes que estão associadas a diferentes níveis de metas de desempenho.
+
+# 7. Limitações e Melhorias
+
+A análise foi conduzida com um conjunto de dados específico e limitado em termos de período de tempo, o que pode comprometer a generalização dos resultados para outros períodos ou situações. Além disso, a falta de controle sobre variáveis externas, como promoções, sazonalidade, e condições econômicas, pode ter uma influência significativa sobre os resultados e as relações observadas, afetando a precisão e a validade da análise. A simplicidade dos modelos utilizados, focada em métodos descritivos e análise de componentes principais (PCA), pode ser uma limitação, já que métodos mais sofisticados, como modelos preditivos ou análises multivariadas mais complexas, poderiam oferecer insights mais profundos. Outro ponto crítico é a limitação dos dados, já que a análise foi baseada em apenas três variáveis (sales_target, quantidade, preço), excluindo fatores que poderiam influenciar significativamente o desempenho de vendas, como estratégias de marketing, satisfação do cliente, e fatores macroeconômicos. A técnica de PCA, sendo linear, pode não capturar todas as relações complexas ou não lineares entre as variáveis, o que significa que a análise pode não refletir a totalidade da complexidade dos dados. Além disso, a explicabilidade dos componentes principais pode ser desafiadora, especialmente quando as cargas das variáveis são complexas, tornando a interpretação dos componentes menos intuitiva.
+
+Para aprimorar a análise do desempenho dos vendedores, algumas melhorias podem ser implementadas. Em primeiro lugar, o aumento do período de análise permitiria uma observação mais robusta das tendências e padrões ao longo do tempo, possibilitando a identificação de sazonalidades ou mudanças estruturais. Adicionalmente, o controle de variáveis externas, incluindo fatores como campanhas promocionais ou variações sazonais, pode aumentar a acurácia e a clareza dos resultados. A análise de clusters também desempenha um papel importante, permitindo identificar segmentos de vendedores com características semelhantes e, consequentemente, oferecer estratégias personalizadas de gestão de vendas. Além disso, a integração de métricas adicionais, como a satisfação do cliente ou a taxa de conversão, proporciona uma visão mais holística do desempenho dos vendedores. Para garantir a robustez dos componentes principais, a aplicação de validação cruzada é essencial. Finalmente, caso haja dados temporais disponíveis, a análise de séries temporais combinada com PCA pode revelar tendências ao longo do tempo, oferecendo insights sobre como os padrões de vendas evoluem.
+
+# 8. Governança de Dados
+
+Para o desenvolvimento da Análise exploratória deste documento, foram utilizados 2 conjuntos de dados fornecidos pelos parceiros de projeto, todos em formato .csv:
+
+-   **employee_final:** base de colaboradores das lojas;
+-   **targets_salesperson_final_v3.csv:** base de metas de vendas dos vendedores;
+-   **2024.csv:** transações 2024
+
+Todos os dados passaram por um processo de transformação anterior ao acesso dos integrantes do grupo, o que possibilita uma camada de segurança de informações para os dados aqui utilizados. Nessa etapa, os dados sensíveis foram transformados para outros similares em impacto, mas fictícios.
+
+Porém, mesmo que lidando com dados "fictícios", estão sendo aplicadas políticas de segurança para garantir o cumprimento das normas LGPD em todas as etapas de entendimento e utilização dos dados, garantindo privacidade e não enviezamento. Um exemplo disso é a remoção das variáveis de "nome", "sobrenome" e "cpf" da tabela de vendedores para as análises, que são classificados como dados pessoais sensíveis
+
+Por fim, o público com acesso tanto ao drive com as bases completas, como a este documento, está restrito a:
+
+-   Integrantes do grupo 1;
+
+-   Professores de computação e Orientadora da turma 03 do Inteli;
+
+-   Parceiros do projeto.

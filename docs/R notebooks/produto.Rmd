@@ -1,0 +1,811 @@
+---
+title: "Produto" 
+author: "Grupo 1" 
+date: "2024-08-09" 
+output:   
+  html_document: default   
+  pdf_document: default 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse) 
+library(data.table) 
+library(GGally) 
+library(corrplot) 
+library(FactoMineR)
+library(arules)
+library(entropy)
+library(arulesViz)
+library(ggplot2)
+```
+
+——————————————————————————————————————————————
+
+# 1. Carregamento e Preparação dos Dados
+
+```{r}
+path <- "C:/Users/Inteli/Documents/Modulo11/datasets"
+```
+
+```{r}
+data <- read.csv2(paste(path,"/sku_dataset.csv", sep = "")) 
+head(data)
+```
+
+```{r}
+data2 <- read.csv(paste(path,"/sku_price.csv", sep = "")) 
+head(data2)
+```
+
+```{r}
+data3 <- read.csv(paste(path,"/sku_cost.csv", sep = ""))
+head(data3)
+```
+
+```{r}
+data4 <- read.csv(paste(path,"/transaction_fact_v6_2024.csv", sep="")) 
+head(data4)
+```
+
+
+```{r}
+str(data) 
+print("-----------------------------") 
+str(data2)
+print("-----------------------------") 
+str(data3)
+print("-----------------------------")
+str(data4)
+```
+
+——————————————————————————————————————————————
+
+# 2. Resumo Estatístico e Descrição dos Dados
+
+```{r}
+summary(data)
+```
+
+Nota-se que a tabela apresentada contém as seguintes variáveis:
+
+-   cod_prod: refere-se ao código do produto, conjunto de caracteres que identifica cada produto cadastrado;
+
+-   nome_abrev: nome abreviado do produto;
+
+-   nome_completo: nome completo do produto;
+
+-   descricao: uma explicação do que se trata o produto;
+
+-   categoria: divisão categórica feita para classificar os produtos existentes na loja;
+
+-   sub_categoria: subdivisão categórica feita a fim de classificar os produtos em grupos menores dos produtos existentes na loja;
+
+-   marca: marca do produto;
+
+-   conteudo_valor: valor quantitativo do quanto de conteúdo contém dentro de cada embalagem;
+
+-   conteudo_medida: unidade de medida que é considerada em relação à quantidade de conteúdo de cada embalagem.
+
+```{r}
+summary(data2)
+```
+
+Já na segunda tabela, nota-se que são apresentadas as seguintes variáveis:
+
+-   cod_prod: refere-se ao código identificador do produto;
+
+-   data_inicio: data de início que o produto recebeu determinado preço;
+
+-   data_fim: data final que o produto se manteve com determinado preço;
+
+-   preco: preço do produto cobrado pela loja.
+
+```{r}
+summary(data3)
+```
+
+Na terceira tabela, as variáveis apresentadas são:
+
+-   cod_prod: refere-se ao código identificador do produto;
+
+-   data_inicio: data de início que o produto começou a custar determinado valor para a loja;
+
+-   data_fim: data final que o produto se manteve com determinado valor de custo para loja ;
+
+-   custo: valor pago pela loja para adquirir o produto para estoque.
+
+```{r}
+summary(data4)
+```
+
+Por fim, na quarta tabela, são representadas as seguintes variáveis:
+
+-   data: data na qual foi realizada a venda;
+
+-   cod_prod: id de identificação de cada produto;
+
+-   cod_vendedor: id de identificação do vendedor responsável pela venda;
+
+-   cod_loja: ide de identificação da loja onde ocorreu a venda;
+
+-   cod_transacao: id de identificação da compra realizada;
+
+-   quantidade: quantidade de um mesmo produto adquirido em uma venda;
+
+-   preco: resultado da multiplicação do número de um tipo de produto adquirido pelo seu preço de venda.
+
+```{r}
+contar_lojas_diferentes <- function(dataset) {
+  return(n_distinct(dataset$cod_loja))
+}
+```
+
+```{r}
+numero_lojas <- contar_lojas_diferentes(data4)
+print(numero_lojas)
+```
+
+
+```{r}
+# Função para calcular a entropia de uma coluna
+calcular_entropia_coluna <- function(coluna) {
+  # Contagem das frequências de cada valor na coluna
+  contagem <- table(coluna)
+  # Calcula as probabilidades
+  probabilidades <- contagem / length(coluna)
+  # Calcula a entropia usando a base logarítmica 2
+  entropia <- -sum(probabilidades * log2(probabilidades))
+  return(entropia)
+}
+
+# Calcula a entropia de cada coluna em um dataframe
+entropias <- list()
+for (coluna in names(data4)) {
+  entropias[[coluna]] <- calcular_entropia_coluna(data4[[coluna]])
+}
+
+# Exibe a entropia de cada coluna
+for (coluna in names(entropias)) {
+  cat(sprintf("Entropia da coluna %s: %.2f bits\n", coluna, entropias[[coluna]]))
+}
+```
+
+
+```{r}
+# Função para plotar a entropia das colunas
+plotar_entropia_colunas <- function(entropias) {
+  # Converte a lista de entropias em um dataframe para facilitar a plotagem
+  df_entropia <- data.frame(
+    Coluna = names(entropias),
+    Entropia = unlist(entropias)
+  )
+  
+  # Gera o gráfico de barras da entropia das colunas
+  ggplot(df_entropia, aes(x = Coluna, y = Entropia)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    labs(title = "Entropia das Colunas", x = "Coluna", y = "Entropia (bits)") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Inclina os rótulos do eixo x para melhor legibilidade
+}
+
+# Chama a função para plotar o gráfico
+plotar_entropia_colunas(entropias)
+```
+
+# 3. Análise Univariada
+
+Para a análise das variáveis contínuas selecionadas, é possível fazer uma observação através de histogramas, a fim de visualizar sua distribuição.
+
+## 3.1 Análise da quantidade de produto por embalagem
+
+Inicialmente, podemos analisar o volume de cada produto, informação contida na primeira base. Vale destacar que apesar de a coluna "conteudo_valor" ser numérica, alguns valores estão em unidades de medida diferentes, porém, conforme é possível concluir com o gráfico a seguir, existe uma maioria expressiva de valores em ml. Neste sentido, para a análise a seguir usando histograma, será considerado apenas os produtos medidos em ml.
+
+```{r}
+ggplot(data = data) +   
+  geom_bar(mapping = aes(x = conteudo_medida))
+```
+
+```{r}
+ggplot(data = data[data$conteudo_medida == "ml", ]) +   
+  geom_histogram(mapping = aes(x = as.integer(conteudo_valor)), binwidth = 50)+   
+  labs(title = "Distribuição da quantidade de produtos", x = "Quantidade de produto", y = "Frequência")  
+```
+
+A partir desses resultados é possível tirar algumas conclusões quanto ao volume dos produtos:
+
+-   A maior parte das embalagens tem um conteúdo em torno de valores menores, com uma concentração significativa no início do eixo X. Isso significa que a maioria dos produtos na base tem um volume mais baixo de conteúdo;
+
+-   Os pontos que estão mais distantes do pico inicial no histograma podem ser considerados outliers, ou seja, embalagens com uma quantidade de conteúdo significativamente maior que a maioria, dando destaque para o produto próximo a 1500 ml.
+
+## 3.2 Análise dos preços unitários de cada produto
+
+Outra variável que podemos observar também o comportamento é o preço desses produtos e entender qual a faixa do valor cobrado nas lojas.
+
+```{r}
+ggplot(data = data2) +   
+  geom_histogram(mapping = aes(x = as.integer(preco)), binwidth = 10)+   
+  labs(title = "Distribuição do preço dos produtos", x = "Preço", y = "Frequência")
+```
+
+Com esses resultdos é possível tirar algumas conclusões:
+
+-   A maior parte dos produtos está concentrada na faixa de preços de até R\$200, sugerindo que a maioria dos produtos possui um preço relativamente acessível;
+
+-   A assimetria no gráfico consegue nos ajudar a identificar outliers dentro desse conjunto, sendo os produtos acima de R\$300, dando enfoque para o intervalo entre R\$300 a R\$400 que possui valores ainda mais baixos que os produtos com preços acima de R\$400.
+
+## 3.3 Análise dos custos unitários de cada produto
+
+Para a análise de custos que a empresa tinha com os produtos, foi feita uma distribuição a partir das frequências que os preços apareciam nos produtos.
+
+```{r}
+ggplot(data = data3) +   
+  geom_histogram(mapping = aes(x = as.integer(custo)), binwidth = 10)+   
+  labs(title = "Distribuição do custo dos produtos", x = "Custo", y = "Frequência")
+```
+
+A partir dessa análise é possível retirar alguns insights:
+
+-   Nota-se que a maioria desses são de valores menores de R\$ 100, na qual se traduz em uma assimetria para esquerda, com a concentração de produtos com valores baixos;
+
+-   O baixo custo de aquisição pode significar maior potencial de lucro.
+
+## 3.5 Análise da distribuição dos produtos por categoria
+
+Distribuição de categoria:
+
+```{r}
+# Histograma da variável 'categoria'
+ggplot(data, aes(x = fct_infreq(categoria))) +
+  stat_count(width = 0.5) +
+  theme_minimal() +
+  labs(title = "Distribuição de categoria dos produtos", x = "Categoria", y = "Frequência")
+```
+
+Com esses resultados é possível tirar algumas conclusões:
+
+-   Não há uma diferença tão grande na quantidade de variações de produtos entre categorias, com um desvio de 20 variações. Com exceção da categoria Cabelo que possui cerca de 25 variações de produtos;
+
+-   A quantidade de variações de produtos por categoria mostra que há uma grande possibilidade de haver uma boa quantidade de produtos substitutos por categoria.
+
+## 3.6 Análise da distribuição dos produtos por subcategoria
+
+Distribuição de subcategoria:
+
+```{r}
+# Histograma da variável 'sub_categoria' 
+ggplot(data, aes(y = fct_rev(fct_infreq(sub_categoria)))) +   stat_count(width = 1, color = "black") +   theme_minimal() +   labs(title = "Distribuição de subcategoria dos produtos", x = "Frequência", y = "Subcategoria")
+```
+
+Com esses resultados é possível tirar algumas conclusões:
+
+-   A maior parte dos produtos possuem menos de 50 variações por subcategoria;
+
+-   Produtos mais abaixo no gráfico tem uima chance menor de possuir substitutos.
+
+## 3.7 Análise da distribuição dos produtos por marca
+
+Distribuição de marcas:
+
+```{r}
+ggplot(data, aes(y = fct_rev(fct_infreq(marca)))) +
+    stat_count(width = 1, fill = "gray", color = "black") +
+    theme_minimal() +
+    labs(title = paste("Distribuição de marca"), x = "Frequência", y = "Marca")
+```
+
+Com esses resultados é possível tirar algumas conclusões:
+
+-   A maior parte das marcas possuem menos de 50 variações de produtos;
+
+-   Algumas marcas dominam o catálogo de produtos das lojas.
+
+——————————————————————————————————————————————
+
+# 4. Análise Bivariada
+
+Para compreender a relação entre as variáveis, pode-se realizar uma análise bivariada, que permite examinar como duas variáveis se comportam em relação uma à outra. Essa análise é útil para identificar padrões de correlação, como associações positivas ou negativas, e ajuda a revelar a força e a direção dessa relação, proporcionando insights valiosos sobre como uma variável pode influenciar a outra.
+
+## 4.1 Relação de marca e categoria:
+
+```{r}
+# Scatter plot entre 'marca' e 'categoria'
+ggplot(data, aes(y = marca, x = categoria)) +
+  geom_point(alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Relação entre Marca e Categoria", x = "Categoria", y = "Marca")
+```
+
+O gráfico mostrado evidencia a relação entre as marcas e as categorias, podendo ver as categorias na qual cada marca faz frente. A grande maioria das marcas atacam pelo menos 30% das categorias de produtos.
+
+## 4.2 Relação de preço por categoria
+
+Para entendermos o comportamento do preço quanto a categoria do produto, iremos observar através de um gráfico de barras.
+
+Para isso, inicialmente, faremos uma junção do primeiro dataset, com o segundo:
+
+```{r}
+last_records_data <- data[data$cod_prod %in% unique(data$cod_prod), ]
+last_records_data <- last_records_data[order(last_records_data$cod_prod, decreasing = TRUE), ]
+last_records_data <- last_records_data[!duplicated(last_records_data$cod_prod), ]
+```
+
+```{r}
+last_records_data2 <- data2[data2$cod_prod %in% unique(data2$cod_prod), ]
+last_records_data2 <- last_records_data2[order(last_records_data2$cod_prod, decreasing = TRUE), ]
+last_records_data2 <- last_records_data2[!duplicated(last_records_data2$cod_prod), ]
+```
+
+```{r}
+data_union <- last_records_data %>%   
+  left_join(last_records_data2, by = "cod_prod")
+str(data_union)
+head(data_union)
+```
+
+```{r}
+ggplot(data_union, aes(x = categoria, y = as.numeric(preco))) +  
+  geom_bar(stat = "identity", fill = "grey") +   
+  labs(     
+    title = "Preços por Categoria",     
+    x = "Categoria",
+    y = "Preço"   
+    )
+```
+
+O gráfico mostrado faz a soma dos preços de cada categoria. Nesse sentido, pode ser equivocado dizer que os preços desses produtos tendem a ser mais altos, uma vez que pode se ter maior quantidade de produtos nessa categoria, fazendo com o gráfico não represente a realidade. Para comprovar qual das categorias possui maiores preços, podemos plotar um boxplot.
+
+```{r}
+ggplot(data_union, aes(x = categoria, y = preco)) +
+  geom_boxplot() +   
+  theme_minimal() +   
+  labs(title = "Relação preço e categoria", x = "Categoria", y = "Preço") 
+```
+
+Nota-se que a categoria de "Corpo" possui preços mais altos, além de uma dispersão maior comparada às demais categorias. Outra correlação que podemos observar é o preço com o volume do produto vendido.
+
+## 4.3 Relação de preço por volume
+
+```{r}
+ggplot(data_union, aes(x = as.numeric(conteudo_valor), y = as.numeric(preco))) +
+  geom_point() +   
+  theme_minimal() +   
+  labs(title = "Relação entre volume e preço", x = "conteúdo volume", y = "preço")
+```
+
+Com esse resultado percebemos que não há uma relação clara entre preço e volume, o que indica que outros fatores podem afetar mais o preço do que a quantidade de produto na embalagem. Não é possível identificar uma clara tendência linear.
+
+Além disso, nota-se uma concentração de pontos na região de menores volumes e preços mais baixos, o que sugere que a maioria dos produtos tem um volume relativamente pequeno e são vendidos a preços mais acessíveis.
+
+Para confirmar a relação entre as variáveis, podemos gerar uma matriz de correlação.
+
+```{r}
+data_union$conteudo_valor <- as.numeric(data_union$conteudo_valor)
+desired_numeric_cols <- c("conteudo_valor","preco" ) 
+cor_matrix <- cor(data_union %>% select(all_of(desired_numeric_cols))) 
+corrplot(cor_matrix, method = "square")
+```
+
+Nesse sentido, comprova-se a falta de correlação entre as duas variáveis.
+
+```{r}
+data_union2 <- data3 %>%   
+  left_join(data, by = "cod_prod")
+head(data_union2)
+```
+
+## 4.4 Análise de custo por categoria:
+
+```{r}
+ggplot(data_union2, aes(x = categoria, y = custo)) +
+  geom_boxplot() +   
+  theme_minimal() +   
+  labs(title = "Relação custo e categoria", x = "Categoria", y = "Custo") 
+```
+
+## 4.5 Relação do lucro
+
+* Lucro: diferença entre preço de venda e preço de aquisição
+
+Dentro das avaliações que foram feitas, notou-se divergência entre os valores do preço do produto no dataset `sku_price` e o valor no dataset `trasactions_fact`, assim, para fim de maiores avaliações, decidiu-se realizar análises com ambos os dados e verificar o comportamento desses
+
+```{r}
+last_records_data3 <- data3[data3$cod_prod %in% unique(data3$cod_prod), ]
+last_records_dat34 <- last_records_data3[order(last_records_data3$cod_prod, decreasing = TRUE), ]
+last_records_data3 <- last_records_data3[!duplicated(last_records_data3$cod_prod), ]
+```
+
+```{r}
+head(last_records_data3)
+```
+
+```{r}
+
+data_union3 <- data4 %>% 
+  left_join(last_records_data, by = "cod_prod")
+head(data_union3)
+```
+
+```{r}
+data_union4 <- data_union3 %>% 
+  inner_join(last_records_data3, by = "cod_prod")
+head(data_union4)
+```
+
+```{r}
+data_union4$lucro <- data_union4$preco / data_union4$quantidade - data_union4$custo
+```
+
+```{r}
+data_union4 <- data_union4 %>% 
+  arrange(desc(lucro))
+head(data_union4)
+```
+
+```{r}
+lucro_por_mes_2024 <- data_union4 %>%
+  mutate(data = as.Date(data, format = "%Y-%m-%d")) %>%  # Converter para data
+  mutate(ano_mes = format(data, "%Y-%m")) %>% 
+  group_by(ano_mes) %>%
+  summarise(total_lucro_2024 = sum(lucro))
+
+```
+
+A partir do cruzamento entre os dados de preço e custo, foi adicionado um novo atributo na tabela de lucro. Vale destacar que foi considerada a tabela de transações, a fim de obter o lucro mais próximo ao real obtido no período. Além disso, o valor do preço da transação está sujeito a quantidade de produtos comprados. Nesse sentido, para a formulação da nova coluna, foi considerado a fórmula de (preço da transação/quantidade do produto) - custo do produto.
+
+```{r}
+# Plotar o gráfico com a escala ajustada e labels
+ggplot(lucro_por_mes_2024, aes(x = ano_mes, y = total_lucro_2024)) +
+  geom_bar(stat = "identity", fill = "grey") +
+  geom_text(aes(label = scales::comma(total_lucro_2024)), vjust = -0.2) +
+  theme_minimal() +
+  labs(title = "Lucro do mês",
+       x = "Mês",
+       y = "Lucro (em R$)") +
+  scale_y_continuous(labels = scales::comma) +
+  theme(axis.text.x = element_text(angle = 90, hjust = -0.8))
+```
+
+A partir dessa análise, observou-se que: 
+
+-   Fevereiro registrou o maior lucro, possivelmente impulsionado por datas festivas como o Carnaval, que tradicionalmente aumentam a demanda por cosméticos, à medida que as pessoas se preparam para os eventos e celebrações; 
+-   Junho tem os menores lucros.
+
+## 4.6 Relação da quantidade de vendas por mês
+
+Para compreender melhor o padrão de compras na rede parceira, será conduzida uma análise exploratória das vendas, com o objetivo de identificar, em um contexto macro que abrange todas as lojas, os meses com maior volume de compras. Essa análise é fundamental para identificar novas oportunidades de otimização de vendas e apoiar o planejamento estratégico da empresa parceira, garantindo uma melhor preparação para os períodos de alta demanda por produtos.
+
+Como a análise será feita mensalmente, é necessário primeiro agrupar os dados de vendas com base no mês em que ocorreram, a fim de segmentá-los adequadamente.
+
+```{r}
+vendas_por_mes_2024 <- data4 %>%
+  mutate(data = as.Date(data4$data))%>%
+  mutate(ano_mes = format(data,"%Y-%m"))%>%
+  group_by(ano_mes)%>%
+  summarise(total_vendas_2024 =sum(quantidade))
+```
+
+```{r}
+summary(vendas_por_mes_2024)
+```
+
+Após uma primeira análise estatística dos dados, já é possível observar alguns insights interessantes sobre as vendas ocorridas no ano de 2023:
+
+-   O menor registro de vendas em 1 mês foi de 120.346;
+
+-   A media de vendas por mês é de 91929;
+
+-   O maior registro de vendas em 1 mês foi de 300.852;
+
+Agora, será gerado um gráfico para que possa ser analisado a distribuição desses dados ao longo dos meses:
+
+```{r}
+ggplot(vendas_por_mes_2024, aes(x = ano_mes, y = total_vendas_2024)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Quantidade de Vendas por Mês 2024",
+       x = "Mês",
+       y = "Total de Vendas") +
+  scale_y_continuous(labels = scales::comma) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+O gráfico gerado revela novas informações que complemetam as descobertas anteriormente:
+
+-   O mês com maior número de vendas foi maio, com um número de 300.852;
+
+-   O mês com menor vendas foi junho, com 120.346;
+
+-   O mês de junho representar o mês com menor de vendas embasa o motivo desse mesmo mês também representar o mês com menor lucro, assim como foi analisado no item 4.5 desse documento;
+
+-   A amostra de meses analisada ainda é muito pequena para se observar padrões de comportamento anuais, visto que não abrange todos os meses do ano e portanto qualquer analise de projeção de crescimento ou queda nas vendas seria imprecisa.
+
+
+## 4.7 Relação da quantidade arrecadada por mês
+
+Para entender melhor o padrão de vendas na rede parceira, será realizada uma análise exploratória das receitas geradas, com o objetivo de identificar, em um contexto abrangente que considera todas as lojas, os meses com maior volume de arrecadação. Essa análise é crucial para identificar os fatores que contribuem para o aumento das receitas, além de validar a hipótese de que o mês com maior volume de vendas também será o mês com maior arrecadação.
+
+Como a análise será feita mensalmente, é necessário primeiro agrupar os dados de vendas com base no mês em que ocorreram, a fim de segmentá-los adequadamente.
+
+```{r}
+# Agrupar por mês e ano e somar o valor total arrecadado
+arrecadacao_por_mes_2024 <- data4 %>%
+  mutate(data = as.Date(data4$data))%>%
+  mutate(ano_mes = format(data,"%Y-%m"))%>%# 
+  group_by(ano_mes)%>%
+  summarise(total_arrecadado_2024 =sum(preco, na.rm =TRUE))
+```
+
+```{r}
+summary(arrecadacao_por_mes_2024)
+```
+
+A primeira análise estatistica dos dados de arrecadação revelam as seguintes observações:
+
+-   O mês com menor receita arrecadou 12.245.161  reais;
+
+-   A média de receita mensal é de 9.780.462;
+
+-   O mês com maior receita arrecadou 32.764.899.
+
+Agora, será gerado um gráfico para que possa ser analisado a distribuição desses dados ao longo dos meses:
+
+```{r}
+# Plotar o gráfico com a escala ajustada
+ggplot(arrecadacao_por_mes_2024, aes(x = ano_mes, y = total_arrecadado_2024)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Total Arrecadado por Mês 2024",
+       x = "Mês",
+       y = "Total Arrecadado (em R$)") +
+  scale_y_continuous(labels = scales::comma) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+O novo gráfico de receita revela novos pontos importantes de serem analisados:
+
+-   Fevereiro continua sendo o mês com o maior receita, mostrando coerência com os dados anteriores de lucro;
+
+-   Junho continua sendo o mês com o menor receita, mostrando coerência com os dados anteriores de lucro;
+
+# 5. Análise multivariada
+
+Para a análise multivariada podemos usar da técnica de PCA (Análise de Componentes Principais). Apesar das bases escolhidas\* não possuírem uma quantidade significativa de campos numéricos, podemos observar o comportamento com o campo de preço e volume.
+
+```{r}
+library(FactoMineR)  
+res.pca <- PCA(data_union[, c("preco", "conteudo_valor")], scale.unit = TRUE)  
+plot(res.pca)
+```
+
+-   O gráfico de dispersão revela um padrão de agrupamento, com a maioria das observações concentradas no centro e alguns outliers espalhados.
+
+-   O gráfico circular mostra os autovetores das variáveis nos dois primeiros componentes principais.
+
+\*Foi combinado entre o grupo de cada um fazer a exploração das tabelas e tema que ficou responsável na divisão de tarefas do artefato "Análise Exploratória e de Governança de dados", assim, as tabelas selecionadas não eram tão apropriadas para essas análises que exigem mais campos numéricos do que categóricos.
+
+
+# 6. Análises aprofundadas voltadas para implementação de novas Features
+
+Após a análise exploratória dos dados, identificou-se a necessidade de implementar novas funcionalidades que agreguem valor ao produto desenvolvido e ofereçam suporte adequado aos vendedores e gerentes das lojas impactadas pela solução. Agora, será realizada uma análise de dados direcionada para validar a viabilidade dessas funcionalidades, que possuem como o objetivo auxiliar gerentes e vendedores na otimização do processo de vendas.
+
+## 6.1. Cross-Selling
+
+Cross-selling (ou venda cruzada) é uma estratégia de vendas que busca incentivar o cliente a adquirir produtos ou serviços adicionais que complementam ou estão relacionados ao item principal que ele já está comprando ou demonstrou interesse. O objetivo é aumentar o valor total da compra, oferecendo opções que atendam a diferentes necessidades ou interesses do cliente de maneira integrada. No contexto do projeto atual, caso um cliente compre um shampoo, por exemplo, o data app poderia sugrir ao vendedor que também lhe oferecesse um condicionador ou outro produto atrelado aos cuidados capilares. Essa abordagem não apenas aumenta as vendas, mas também melhora a experiência do cliente, oferecendo soluções completas e personalizadas.
+
+### 6.1.1 O que é o Apriori
+
+O algoritmo Apriori é uma das técnicas mais conhecidas na mineração de dados para identificar padrões ocultos em grandes volumes de dados transacionais. Originalmente desenvolvido para analisar cestas de compras de clientes, o Apriori permite encontrar regras de associação, que são conexões significativas entre itens frequentemente adquiridos juntos em uma mesma transação. Por exemplo, ele pode revelar que "se um cliente compra batom, há 80% de chance de que ele também compre blush".
+
+Essas regras são fundamentais para estratégias de marketing, como campanhas de cross-selling e promoções personalizadas, ajudando as empresas a aumentar suas vendas e a proporcionar uma experiência mais relevante e satisfatória para os clientes. No contexto atual, o algoritmo Apriori será empregado para construir a funcionalidade de cross-selling no DataApp em desenvolvimento, identificando automaticamente recomendações de produtos com base em comportamentos de compra reais.
+
+### 6.1.2. Parâmetros do Apriori
+
+O algoritmo Apriori utiliza, por padrão, dois parâmetros fundamentais para a análise estatística das transações de venda: o suporte e a confiança.
+
+*   **support(Suporte):**
+  *   O suporte de uma regra é uma métrica que indica a frequência com que um conjunto de itens (produtos, no seu caso) aparece no total de transações.
+  *   Formalmente, o suporte de uma regra X ⇒ Y é definido como a proporção de transações no dataset que contêm tanto o item X quanto o item 
+Y.
+  *   Suporte(X ⇒ Y ) = número de transações contendo X e Y / número total de transações
+  *   Exemplo: Se o suporte de "batom e shampoo" for 0.05, isso significa que 5% de todas as transações incluem a compra de "batom" e "shampoo" juntos.
+  *   Um suporte maior indica que a combinação de itens é comum.
+  
+*   **confidence(Confiança)::** 
+  *   A confiança de uma regra é uma métrica que indica a probabilidade condicional de que o item Y seja comprado dado que o item X foi comprado.
+  *   Em outras palavras, é a proporção de transações que contêm Y entre aquelas que já contêm X.
+  *   Confiança(X ⇒ Y) = número de transações contendo X e Y / número de transações contendo X
+  *   Exemplo: Se a confiança de "batom ⇒ shampoo" for 0.6, isso significa que, em 60% das transações onde "batom" foi comprado, "shampoo" também foi comprado.
+  *   Alta confiança indica que Y é frequentemente comprado junto com X.
+
+*   **lhs (Left-hand side):** Produto(s) do lado esquerdo da regra. Este é o produto que foi comprado.
+
+*   **rhs (Right-hand side):** Produto(s) do lado direito da regra. Este é o produto sugerido como cross-selling para o cliente que comprou o produto à esquerda.
+
+*   **coverage:** A frequência de ocorrência do lado esquerdo (lhs) nas transações.
+
+*   **lift:** Medida da força da associação entre lhs e rhs. Um valor de lift maior que 1 indica uma associação positiva, ou seja, a compra do lhs aumenta a probabilidade de compra do rhs.
+
+*   **count:** Número de vezes que a regra específica foi observada no conjunto de dados.
+
+### 6.1.3. Execução do Apriori
+  
+Primeiramente, a tabela com os dados das transações será integrada à tabela que contém a descrição dos produtos, permitindo a visualização dos produtos por seus nomes, em vez de códigos. Essa abordagem torna o processo mais humanizado e facilita a interpretação dos dados.
+```{r}
+inner_trans <- merge(data4, data, by = 'cod_prod')
+resultado <- inner_trans%>%
+  arrange(cod_transacao)
+head(resultado,200)
+```
+
+E, seguida, será criada uma estrutura de lista onde cada transação (cod_transacao) é usada como uma chave, e os produtos comprados nessa transação (nome_abrev) são armazenados como valores.Essa etapa é essencial porque a análise de regras de associação precisa entender quais produtos são comprados juntos. Sem transformar os dados em um formato que represente transações completas, o algoritmo Apriori não pode funcionar corretamente.
+
+```{r}
+transacoes <- split(inner_trans$nome_abrev, inner_trans$cod_transacao)
+```
+
+
+Em seguida, a lista de transações criada na etapa anterior é convertida em um objeto de classe transactions, que é um formato específico do pacote arules para representar dados de transações. Este formato é otimizado para cálculos eficientes de regras de associação, armazenando dados transacionais como um "esparso" conjunto de dados (onde apenas as transações com valores não nulos são armazenadas).
+
+```{r}
+# Converter para formato transacional
+trans <- as(transacoes, "transactions")
+```
+
+Por fim, o algoritmo Apriori é aplicado à lista de transações selecionada, gerando os resultados desejados de cross-selling. Inicialmente, serão utilizados como parâmetros um suporte mínimo de 0,001 e uma confiança mínima de 0,1. Esses valores serão definidos inicialmente em hard code, mas, futuramente, uma análise de hiperparâmetros será realizada para identificar os valores mais adequados para o conjunto de dados disponível.
+
+```{r}
+# Aplicar o algoritmo Apriori para encontrar regras de associação
+regras <- apriori(trans, parameter = list(supp = 0.001, conf = 0.1))
+```
+
+```{r}
+# Verifique o número de regras geradas
+num_regras <- length(regras)
+
+# Se houver regras, exiba as mais relevantes
+if (num_regras > 0) {
+  # Defina o número máximo de regras a serem exibidas
+  num_regras_exibir <- min(10, num_regras) 
+  
+  # Inspecione as regras mais relevantes
+  inspect(sort(regras, by = "lift")[1:num_regras_exibir])
+} else {
+  cat("Nenhuma regra foi encontrada. Tente ajustar os parâmetros de suporte e confiança.\n")
+}
+```
+
+
+```{r}
+plot(regras, method = "grouped")
+```
+**Explicação do Gráfico:**
+  *   Os produtos na vertical são vendidos juntamente com os da horizontal.
+  *   Quanto maior a “bolinha” maior a frequência que essa venda em conjunto acontece.
+  *   Quão mais forte a cor, maior a probabilidade da venda ocorrer.
+  
+A análise incial revela alguns pontos interessantes sobre o cross-selling 
+
+-   Atualmente, existem 9 relações que atendem os parâmetros especificados de suporte e confiança;
+
+-   A relação de cross selling mais comum é a venda conjunta dos produtudos "Rapid Clear Fight Fade" e "Advanced Night Repair Synchronized", que aparecem em 0.2% das transações, o equivalente a 881 compras desses produtos juntos. Além disso, 14% das vendas do primeiro produto ocorrem em conjunto com o segundo.
+
+-   Embora em valores relativos o suporte e a confiança pareçam ser valores pequenos, ao comparados com os valores absolutos que represetam no dataset, vemos que uma amostra consideravel de dados (quase 900) está sendo selecionada para realizar a indicação de cross-selling do produto
+
+-   Visando melhorar o nível de confiança do algorítimo e aumentar o número de relações encontradas, sugere-se uma análise de hiper-parâmetros para otimizar a coleta de vendas conjuntas realizadas na tabela de transação.
+
+## 6.2 Margem de Lucro por Produto
+
+Outra funcionalidade essencial da aplicação é indicar os produtos que geram maior lucro por loja, considerando que cada loja possui preços próprios que podem variar devido a fatores como sazonalidade, mudanças nos custos operacionais, e oferta e demanda. Dessa forma, essa funcionalidade permite que os vendedores priorizem a venda de produtos mais lucrativos, aumentando a arrecadação da loja e facilitando o cumprimento das metas de vendas.
+
+### 6.2.1 Análise do lucro
+
+O primeiro passo é assegurar que a coluna de data do dataser referente aos custos dos produtos esteja no formato correto para a realização de operações relacionadas a datas. Além disso, será selecionada somente a última data que aparece no banco de dados para cada produto, de modo a ser considerado somente seu valor mais recente
+```{r}
+data3$data_fim <- as.Date(data3$data_fim)
+
+custo_recente <- data3 %>%
+  group_by(cod_prod) %>%
+  filter(data_fim == max(data_fim)) %>%
+  ungroup()
+```
+
+Em seguida, a tabela de transações e a tabela de custo dos produtos serão agrupadas para q seja possível visualizar o custo por transação
+
+```{r}
+transacoes_com_custo <- left_join(data4, custo_recente, by = "cod_prod")
+```
+
+A seguir, será calculada a margem de lucro por produto
+```{r}
+# Calcular o preço unitário
+transacoes_com_custo <- transacoes_com_custo %>%
+  mutate(preco_unitario = preco / quantidade,
+         margem_lucro = (preco_unitario - custo) / preco_unitario)
+```
+
+```{r}
+# Ordenar pela margem de lucro em ordem decrescente
+produtos_ordenados <- transacoes_com_custo %>%
+  arrange(desc(margem_lucro))
+
+head(produtos_ordenados)
+```
+```{r}
+produtos_ordenados_nom <- merge(produtos_ordenados, data, by='cod_prod')
+head(produtos_ordenados_nom)
+```
+
+Para visualizar melhor como ficaria esse resultado por loja, utilizaremos da loja com maior margem de lucro ("SP Capital_Sul_2") para visualizar como são distribuídas suas 5 maiores margens de lucro por produto
+```{r}
+# Escolha a loja desejada (substitua 'RJ_37' pelo código da loja desejada)
+loja_especifica <- "SP Capital_Sul_29"
+
+# Filtrar a loja específica
+loja_especifica <- produtos_ordenados_nom %>%
+  filter(cod_loja == "RJ_37") %>%  # Substitua "RJ_37" pelo código da loja desejada
+  group_by(nome_abrev) %>%
+  summarize(margem_media = mean(margem_lucro, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(margem_media)) %>%
+  top_n(5, margem_media)  # Seleciona os 5 produtos com maior margem de lucro
+
+```
+
+```{r}
+# Criar o gráfico de barras
+ggplot(loja_especifica, aes(x = reorder(nome_abrev, margem_media), y = margem_media)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = round(margem_media, 2)), vjust = -0.1) +  # Adiciona rótulos com o valor da margem
+  labs(title = "Top 5 Produtos com Maior Margem de Lucro - SP Capital_Sul_29",
+       x = "Nome do produto",
+       y = "Margem de Lucro Média") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+O gráfico revela que o produto com maior margem de lucro é o Even Better Pop Lip, com uma margem média de lucro de 64%. Essa é a visão que todos os vendedores devem possuir, adaptando suas estratégias de venda para conseguirem melhores destaques com a venda dos produtos mais lucrativos para a empresa.
+
+## 6. Conclusão e Discussão
+
+Assim, podemos concluir que as principais descobertas foram:
+
+-   A maior parte dos produtos estão em "ml", apesar de existirem produtos em outras unidades de medida;
+
+-   A maioria dos produtos está entre 1 e 250 ml;
+
+-   Alguns produtos podem chegar até 1500ml;
+
+-   A faixa de preço principal dos produtos é de R\$1 a R\$200;
+
+-   Alguns produtos podem custar mais de R\$500;
+
+-   As lojas possuem mais produtos para uso nos olhos e pele;
+
+-   Perfumes, sombra e batom são os produtos que mais tem no arsenal de produtos vendidos das lojas;
+
+-   80% das marcas possuem pelo menos 3 categorias de produtos;
+
+-   A categoria com preços mais altos é a de "Corpo", enquanto a de preços mais baixos é a de "Lábios" e "Olhos";
+
+-   Não há correlação direta entre o volume e o preço, o que significa que não necessariamente onde tem mais produto irá custar mais caro (inclusive, de curiosidade, o produto com maior volume tem um dos preços mais baixos da loja).
+
+-   Embora exista uma correlação direta entre o número de vendas e o valor arrecadado, é importante também considerar o tipo de produto vendido. Vendas de produtos com alto valor agregado podem compensar um volume maior de vendas de produtos mais acessíveis, equilibrando a receita total.
+
+-   A funcionalidade de cross seling ainda necessita de um refinamento para otimizar a detecção de regras de associação e a precisão das recomendações.
+
+## 7. Governança de dados
+
+Os dados usados para as análises gráficas presentes neste documento são referentes a 4 datasets diferentes:
+
+-   **sku_dataset:** contém informações informações gerais dos produtos;
+-   **transaction_fact_v3_2024:** contém dados das transações do ano de 2024;
+-   **sku_price:** contém os preços de cada produto de acordo com certa data;
+-   **sku_cost:** contém os custos de cada produto de acordo com certa data;
+
+A maioria dos dados acima são financeiros e por isso são privados da CosmeticCo (apenas funcionários tem acesso). Porém, a maioria desses dados são mais confidenciais que outros e devem ser acessados por cargos maiores. Abaixo, está uma descrição de como a empresa parceira pode deixar o acesso dos dados presentes neste documento:
+
+-   **Vendedores:** podem ter acesso aos dados da sku_dataset, transaction_fact_v3_2024 e sku_price desde que essas mostrem apenas linhas referentes às informações dos produtos e vendas daquele funcionário em específico. Outras informações deverão ser entregues para eles de forma adaptada para seus níveis de acesso;
+-   **Gerentes:** podem ter acesso aos dados das tabelas *sku_cost, sku_dataset e sku_price* para entender como isso reflete nos preços que irá cobrar na sua loja. Além disso, podem ter acesso aos dados da tabela *transactions_data* que são referentes à sua loja, ou seja, à todas as transações que ocorrem em sua loja;
+-   **Diretores:** possuem acesso aos dados de todas as tabelas, com excessão da *transactions_data*, diretores terão acesso aos dados pertencente apenas aos conjuntos de regiões específicas que comandam;

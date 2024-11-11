@@ -1,0 +1,154 @@
+name: Pipeline CI - Dataloom
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verify-if-pull-request-is-approved:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Verify if the pull request is approved
+      if: |
+        (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') || 
+        (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+        (github.event_name == 'workflow_dispatch')
+      run: |
+        echo "Pull Request aprovado."
+
+  verify-if-pull-request-is-from-development-branch:
+    needs: verify-if-pull-request-is-approved
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Verify if the pull request is sent by the development branch
+      if: github.event_name == 'pull_request'
+      run: |
+        if [[ ${{ github.event.pull_request.head.ref }} == "develop" ]]; then
+          echo "Este PR vem da branch develop."
+        else
+          echo "Este PR não vem da branch develop."
+          exit 1
+        fi
+
+  verify-lint-with-flake8:
+    needs: verify-if-pull-request-is-from-development-branch
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4.1.0
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip --disable-pip-version-check install flake8
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  unit-tests:
+    needs: verify-if-pull-request-is-from-development-branch
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./src/data_pipeline
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install Poetry
+      run: curl -sSL https://install.python-poetry.org | python3 -
+
+    - name: Install dependencies
+      run: poetry install
+
+    - name: Run tests
+      run: poetry run pytest
+
+    - name: Run tests with coverage
+      run: poetry run pytest --cov=core --cov-report=html
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: ./src/data_pipeline/htmlcov/
+
+  build-docker:
+    needs:
+      - verify-lint-with-flake8
+      - unit-tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v2
+
+    - name: Build the Docker image
+      run: |
+        docker-compose -f src/infra/docker-compose.yml build --pull --no-cache
+
+  create-github-release:
+    needs: build-docker
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v2
+
+    - name: Install GitHub CLI
+      run: |
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+        sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+        sudo apt update
+        sudo apt install gh -y
+
+    - name: Authenticate GitHub CLI
+      run: |
+        echo "${{ secrets.PERSONAL_ACCESS_TOKEN }}" | gh auth login --with-token
+
+    - name: Set Release Tag and Name
+      id: set-release
+      run: |
+        DATE=$(date +'%Y-%m-%d')
+        VERSION=1
+        TAG="release-${DATE}-${VERSION}"
+        
+        # Check if the tag already exists e increment the version number if necessary
+        while gh release view $TAG > /dev/null 2>&1; do
+          VERSION=$((VERSION + 1))
+          TAG="release-${DATE}-${VERSION}"
+        done
+
+        echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+        echo "RELEASE_NAME=Release $DATE-${VERSION}" >> $GITHUB_ENV
+
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+      with:
+        tag_name: ${{ env.RELEASE_TAG }}
+        release_name: ${{ env.RELEASE_NAME }}
+        draft: false
+        prerelease: false
+        body: "New release for ${{ env.RELEASE_NAME }}"

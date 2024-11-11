@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "core"
+version = "0.1.0"
+description = ""
+authors = ["Felipe Saadi <felipesaadisiegert@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.2.2"
+pyarrow = "^17.0.0"
+clickhouse-connect = "^0.7.19"
+python-dotenv = "^1.0.1"
+Flask = "^3.0.3"
+requests = "^2.32.3"
+supabase = "^2.7.3"
+prefect = "^3.0.2"
+elasticsearch = "^8.15.1"
+pydantic = "^2.9.2"
+
+[tool.poetry.dev-dependencies]
+pytest = "^8.3.2"
+pytest-cov = "^5.0.0"
+pytest-mock = "^3.14.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest-html = "^4.1.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
